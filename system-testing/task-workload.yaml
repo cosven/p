@@ -1,0 +1,71 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: systesting-workload
+spec:
+  params:
+    - name: run-id
+      type: string
+  workspaces:
+  - name: manifest
+    mountPath: /adhoc-manifests
+  steps:
+  - name: generate-workload-manifest
+    image: ubuntu
+    script: |
+      #!/usr/bin/env bash
+      echo "generating worload manifest..."
+      cat <<EOF > "$(workspaces.manifest.path)/tpcc.yaml"
+      apiVersion: naglfar.pingcap.com/v1
+      kind: TestWorkload
+      metadata:
+        name: "$(params.run-id)"
+      spec:
+        clusterTopologies:
+          - name: "$(params.run-id)"
+            aliasName: cluster
+        workloads:
+          - name: "$(params.run-id)"
+            dockerContainer:
+              resourceRequest:
+                name: "$(params.run-id)"
+                node: workload
+              image: hub.pingcap.net/mahjonp/bench-toolset
+              imagePullPolicy: IfNotPresent
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  #!/usr/bin/env bash
+                  tidbHost=\`echo \$cluster_tidb0 | awk -F ":" '{print \$1}'\`
+                  echo <<EOF > /restore.sql
+                  restore database * from 's3://benchmark/tpcc-1000-new/?endpoint=http://minio.pingcap.net:9000&access-key=minioadmin&secret-access-key=minioadmin&force-path-style=true';
+                  EOF
+                  echo "\`date\` restore..."
+                  mysql -uroot -h \$tidbHost -P4000 < /restore.sql
+                  echo "\`date\` restore...done"
+      EOF
+      echo "generating worload manifest...done"
+      cat "$(workspaces.manifest.path)/tpcc.yaml"
+  - name: apply-workload
+    image: hub.pingcap.net/qa/kubetools:20200730
+    script: |
+      #!/usr/bin/env bash
+      kubectl apply -f "$(workspaces.manifest.path)/tpcc.yaml"
+  - name: wait-workload-restore
+    image: hub.pingcap.net/qa/kubetools:20200730
+    script: |
+      #!/usr/bin/env bash
+      while true
+      do
+        state=`kubectl get tw "$(params.run-id)" -ojsonpath='{.status.state}' || echo pending`
+        echo "current resources state: $state"
+        if [ "succeeded" == "$state" ]; then
+          break
+        fi
+        if [ "failed" == "$state" ]; then
+          break
+        fi
+        echo "workload has not finished, wait another 10s"
+        sleep 10
+      done

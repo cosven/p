@@ -1,0 +1,64 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: systesting
+spec:
+  params:
+    - name: run-id
+      type: string
+      default: systesting-demo
+  workspaces:
+    - name: manifest
+  tasks:
+    - name: prepare
+      taskRef:
+        name: systesting-prepare-env
+      params:
+        - name: run-id
+          value: "$(params.run-id)"
+      workspaces:
+        - name: manifest
+          workspace: manifest
+    - name: run-workload
+      taskRef:
+        name: systesting-workload
+      runAfter:
+        - prepare
+      params:
+        - name: run-id
+          value: "$(params.run-id)"
+      workspaces:
+        - name: manifest
+          workspace: manifest
+    - name: sleep-5m
+      runAfter:
+        - run-workload
+      taskSpec:
+        steps:
+          - name: sleep-5m
+            image: ubuntu
+            script: |
+              #!/usr/bin/env bash
+              echo "start sleep..."
+              sleep 300
+              echo sleep...done"
+    - name: scale-cluster
+      taskRef:
+        name: systesting-ops-resource
+      runAfter:
+        - sleep-5m
+      params:
+        - name: run-id
+          value: "$(params.run-id)"
+      workspaces:
+        - name: manifest
+          workspace: manifest
+
+    # - name: teardown
+    #   taskRef:
+    #     name: systesting-teardown
+    #   runAfter:
+    #     - run-workload
+    #   params:
+    #     - name: run-id
+    #       value: "$(params.run-id)"
