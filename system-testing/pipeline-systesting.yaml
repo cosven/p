@@ -10,7 +10,7 @@ spec:
   workspaces:
     - name: manifest
   tasks:
-    - name: prepare
+    - name: env-prepare
       taskRef:
         name: systesting-prepare-env
       params:
@@ -19,49 +19,53 @@ spec:
       workspaces:
         - name: manifest
           workspace: manifest
-    - name: run-workload
+    - name: workload-prepare
       taskRef:
         name: systesting-workload-prepare
       runAfter:
-        - prepare
+        - env-prepare
       params:
         - name: run-id
           value: "$(params.run-id)"
       workspaces:
         - name: manifest
           workspace: manifest
-    # - name: sleep-5m
-    #   runAfter:
-    #     - run-workload
-    #   taskRef:
-    #     name: systesting-sleep
-    #   params:
-    #     - name: duration
-    #       value: "300"
-    # - name: scale-cluster
-    #   taskRef:
-    #     name: systesting-ops-resource
-    #   runAfter:
-    #     - sleep-5m
-    #   params:
-    #     - name: run-id
-    #       value: "$(params.run-id)"
-    #   workspaces:
-    #     - name: manifest
-    #       workspace: manifest
-    # - name: sleep-another-5m
-    #   runAfter:
-    #     - sleep-5m
-    #   taskRef:
-    #     name: systesting-sleep
-    #   params:
-    #     - name: duration
-    #       value: "300"
-    # - name: teardown
-    #   taskRef:
-    #     name: systesting-teardown
-    #   runAfter:
-    #     - sleep-another-5m
-    #   params:
-    #     - name: run-id
-    #       value: "$(params.run-id)"
+    - name: workload-run
+      taskRef:
+        name: systesting-workload-run
+      runAfter:
+        - workload-prepare
+      params:
+        - name: run-id
+          value:
+          value: "$(params.run-id)"
+      workspaces:
+        - name: manifest
+          workspace: manifest
+    - name: sleep-10m
+      runAfter:
+        - workload-prepare
+      taskRef:
+        name: systesting-sleep
+      params:
+        - name: duration
+          value: "600"
+    - name: scale-cluster
+      taskRef:
+        name: systesting-ops-resource
+      runAfter:
+        - sleep-10m
+      params:
+        - name: run-id
+          value: "$(params.run-id)"
+      workspaces:
+        - name: manifest
+          workspace: manifest
+    - name: teardown
+      taskRef:
+        name: systesting-teardown
+      runAfter:
+        - workload-run
+      params:
+        - name: run-id
+          value: "$(params.run-id)"
