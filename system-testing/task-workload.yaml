@@ -1,7 +1,7 @@
 apiVersion: tekton.dev/v1beta1
 kind: Task
 metadata:
-  name: systesting-workload
+  name: systesting-workload-prepare
 spec:
   params:
     - name: run-id
@@ -10,7 +10,7 @@ spec:
   - name: manifest
     mountPath: /adhoc-manifests
   steps:
-  - name: generate-workload-manifest
+  - name: generate-restore-manifest
     image: hub.pingcap.net/qa/kubetools:20200730
     script: |
       #!/usr/bin/env bash
@@ -37,40 +37,39 @@ spec:
                 - -c
                 - |
                   set -x
-                  echo "hello world"
                   tidbHost=\`echo \$cluster_tidb0 | awk -F ":" '{print \$1}'\`
-                  sql="restore database * from 's3://benchmark/tpcc-1000-new/?endpoint=http://minio.pingcap.net:9000&access-key=minioadmin&secret-access-key=minioadmin&force-path-style=true';"
-                  echo "\`date\` restore..."
-                  mysql -uroot -h \$tidbHost -P4000 -e "\$sql"
-                  echo "\`date\` restore...done"
+                  isTpccExist=\`mysql -uroot -P4000 -h "\$tidbHost" -e "use tpcc;" && echo "yes" || echo "no"\`
+                  if [ "\$isTpccExist" == "no" ]; then
+                    mysql -uroot -P4000 -h "\$tidbHost" -e "create database tpcc;"
+                    /go-tpc -H \$tidbHost -P4000 -D tpcc tpcc run --warehouses 10
+                  else
+                    echo "database tpcc already exists"
+                  fi
+                  # sql="restore database * from 's3://benchmark/tpcc-1000-new/?endpoint=http://minio.pingcap.net:9000&access-key=minioadmin&secret-access-key=minioadmin&force-path-style=true';"
+                  # echo "\`date\` restore..."
+                  # mysql -uroot -h \$tidbHost -P4000 -e "\$sql"
+                  # echo "\`date\` restore...done"
       EOF
       echo "generating worload manifest...done"
       cat "$(workspaces.manifest.path)/restore.yaml"
-  - name: apply-workload
+  - name: workload-tail-f
     image: hub.pingcap.net/qa/kubetools:20200730
     script: |
       #!/usr/bin/env bash
       kubectl apply -f "$(workspaces.manifest.path)/restore.yaml"
-  - name: wait-workload-restore
-    image: hub.pingcap.net/qa/kubetools:20200730
-    script: |
-      #!/usr/bin/env bash
       while true
       do
         state=`kubectl get tw "$(params.run-id)" -ojsonpath='{.status.state}' || echo pending`
-        echo "current resources state: $state"
+        echo "current workload state: $state"
         if [ "succeeded" == "$state" ]; then
           break
-        fi
-        if [ "failed" == "$state" ]; then
+        elif [ "failed" == "$state" ]; then
+          break
+        elif [ "running" == "$state" ]; then
           break
         fi
-        echo "workload has not finished, wait another 10s"
-        sleep 10
+        echo "workload wait another 5s"
+        sleep 5
       done
-  - name: run-workload
-    image: hub.pingcap.net/mahjonp/bench-toolset
-    script: |
-      #!/usr/bin/env bash
-      tidbHost=`echo $cluster_tidb0 | awk -F ":" '{print $1}'`
-      /go-tpc -H $tidbHost -P4000 -D tpcc tpcc run --time 15m --threads 10
+      curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/PingCAP-QE/Naglfar/master/scripts/kubectl-naglfar-installer.sh | sh
+      /root/.Naglfar/bin/naglfar logs $(params.run-id) -n $(context.taskRun.namespace) --follow
