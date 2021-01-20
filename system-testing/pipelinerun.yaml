@@ -1,7 +1,7 @@
 apiVersion: tekton.dev/v1beta1
 kind: PipelineRun
 metadata:
-  name: systesting-24
+  name: systesting-50
 spec:
   serviceAccountName: system-testing
   pipelineRef:
@@ -11,4 +11,4 @@ spec:
       emptyDir: {}
   params:
     - name: run-id
-      value: systesting-demo-2
+      value: systesting-demo

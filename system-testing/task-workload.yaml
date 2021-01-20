@@ -11,11 +11,11 @@ spec:
     mountPath: /adhoc-manifests
   steps:
   - name: generate-workload-manifest
-    image: ubuntu
+    image: hub.pingcap.net/qa/kubetools:20200730
     script: |
       #!/usr/bin/env bash
       echo "generating worload manifest..."
-      cat <<EOF > "$(workspaces.manifest.path)/tpcc.yaml"
+      cat <<EOF > "$(workspaces.manifest.path)/restore.yaml"
       apiVersion: naglfar.pingcap.com/v1
       kind: TestWorkload
       metadata:
@@ -36,22 +36,21 @@ spec:
                 - /bin/bash
                 - -c
                 - |
-                  #!/usr/bin/env bash
+                  set -x
+                  echo "hello world"
                   tidbHost=\`echo \$cluster_tidb0 | awk -F ":" '{print \$1}'\`
-                  echo <<EOF > /restore.sql
-                  restore database * from 's3://benchmark/tpcc-1000-new/?endpoint=http://minio.pingcap.net:9000&access-key=minioadmin&secret-access-key=minioadmin&force-path-style=true';
-                  EOF
+                  sql="restore database * from 's3://benchmark/tpcc-1000-new/?endpoint=http://minio.pingcap.net:9000&access-key=minioadmin&secret-access-key=minioadmin&force-path-style=true';"
                   echo "\`date\` restore..."
-                  mysql -uroot -h \$tidbHost -P4000 < /restore.sql
+                  mysql -uroot -h \$tidbHost -P4000 -e "\$sql"
                   echo "\`date\` restore...done"
       EOF
       echo "generating worload manifest...done"
-      cat "$(workspaces.manifest.path)/tpcc.yaml"
+      cat "$(workspaces.manifest.path)/restore.yaml"
   - name: apply-workload
     image: hub.pingcap.net/qa/kubetools:20200730
     script: |
       #!/usr/bin/env bash
-      kubectl apply -f "$(workspaces.manifest.path)/tpcc.yaml"
+      kubectl apply -f "$(workspaces.manifest.path)/restore.yaml"
   - name: wait-workload-restore
     image: hub.pingcap.net/qa/kubetools:20200730
     script: |
@@ -69,3 +68,9 @@ spec:
         echo "workload has not finished, wait another 10s"
         sleep 10
       done
+  - name: run-workload
+    image: hub.pingcap.net/mahjonp/bench-toolset
+    script: |
+      #!/usr/bin/env bash
+      tidbHost=`echo $cluster_tidb0 | awk -F ":" '{print $1}'`
+      /go-tpc -H $tidbHost -P4000 -D tpcc tpcc run --time 15m --threads 10

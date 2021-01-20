@@ -11,7 +11,7 @@ spec:
     mountPath: /adhoc-manifests
   steps:
   - name: generate-manifest
-    image: ubuntu
+    image: hub.pingcap.net/qa/kubetools:20200730
     script: |
       #!/usr/bin/env bash
       echo "generating resources manifest..."

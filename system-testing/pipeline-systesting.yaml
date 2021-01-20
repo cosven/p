@@ -33,15 +33,11 @@ spec:
     - name: sleep-5m
       runAfter:
         - run-workload
-      taskSpec:
-        steps:
-          - name: sleep-5m
-            image: ubuntu
-            script: |
-              #!/usr/bin/env bash
-              echo "start sleep..."
-              sleep 300
-              echo sleep...done"
+      taskRef:
+        name: systesting-sleep
+      params:
+        - name: duration
+          value: "300"
     - name: scale-cluster
       taskRef:
         name: systesting-ops-resource
@@ -53,12 +49,19 @@ spec:
       workspaces:
         - name: manifest
           workspace: manifest
-
-    # - name: teardown
-    #   taskRef:
-    #     name: systesting-teardown
-    #   runAfter:
-    #     - run-workload
-    #   params:
-    #     - name: run-id
-    #       value: "$(params.run-id)"
+    - name: sleep-another-5m
+      runAfter:
+        - sleep-5m
+      taskRef:
+        name: systesting-sleep
+      params:
+        - name: duration
+          value: "300"
+    - name: teardown
+      taskRef:
+        name: systesting-teardown
+      runAfter:
+        - sleep-another-5m
+      params:
+        - name: run-id
+          value: "$(params.run-id)"
